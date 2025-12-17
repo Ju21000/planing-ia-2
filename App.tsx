@@ -1,15 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// --- FONCTION UTILITAIRE : Convertir le fichier en Base64 pour Gemini ---
-// C'est le secret pour que les PDF fonctionnent !
+// --- FONCTION UTILITAIRE : Convertir PDF/Image en Base64 ---
 async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: string; mimeType: string } }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64Data = reader.result as string;
-      // On retire l'en-tête "data:application/pdf;base64," pour ne garder que le contenu
       const base64Content = base64Data.split(',')[1];
       resolve({
         inlineData: {
@@ -23,7 +20,7 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
   });
 }
 
-// --- COMPOSANT FILEUPLOAD ---
+// --- COMPOSANT FILEUPLOAD (Version Emojis - Zéro Bug) ---
 function FileUpload({ onFileUpload }: { onFileUpload: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   
@@ -39,8 +36,9 @@ function FileUpload({ onFileUpload }: { onFileUpload: (file: File) => void }) {
     >
       <input type="file" ref={inputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.txt,.csv,.md,.png,.jpg" />
       <div className="flex flex-col items-center gap-4">
-        <div className="p-4 bg-gray-800 rounded-full group-hover:scale-110 transition-transform">
-          <Upload className="w-8 h-8 text-blue-400" />
+        {/* Remplacement de l'icône Lucide par un Emoji standard */}
+        <div className="text-6xl group-hover:scale-110 transition-transform">
+          📂
         </div>
         <div>
           <p className="text-lg font-medium text-gray-200">Clique pour analyser un document</p>
@@ -92,43 +90,36 @@ export default function App() {
     setError("");
 
     try {
-      // 1. Récupération de la clé API (Vérifie bien le nom dans Vercel !)
       const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || "";
       if (!apiKey) throw new Error("Clé API manquante (VITE_GOOGLE_API_KEY). Vérifie Vercel !");
 
-      // 2. Préparation du fichier pour Gemini (Conversion Base64)
       const filePart = await fileToGenerativePart(uploadedFile);
 
-      // 3. Appel à l'IA
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      const prompt = `Tu es un expert en planification. Analyse ce document (PDF ou texte) et extrais un planning structuré.
+      const prompt = `Tu es un expert en planification. Analyse ce document et extrais un planning structuré.
       Renvoie UNIQUEMENT un tableau JSON valide.
       Chaque ligne doit contenir : "Tâche", "Responsable", "Date", "Statut".
-      Si le document ne contient pas de planning clair, propose-en un logique basé sur le contenu.
-      Ne mets pas de balises markdown (comme \`\`\`json), juste le code JSON brut.`;
+      Si le document ne contient pas de planning clair, propose-en un logique.
+      Ne mets pas de balises markdown, juste le code JSON brut.`;
       
-      // On envoie le prompt (texte) + le fichier (Base64)
       const result = await model.generateContent([prompt, filePart]);
       const response = await result.response;
       const textResponse = response.text();
       
-      // 4. Nettoyage et affichage
       const cleanJson = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
       
       try {
           const parsedData = JSON.parse(cleanJson);
           setResult(Array.isArray(parsedData) ? parsedData : [parsedData]);
       } catch (e) {
-          // Si l'IA bavarde au lieu de donner du JSON, on affiche son texte dans le tableau
           console.error("Erreur parsing JSON:", e);
-          setResult([{ "Réponse IA (Pas de tableau détecté)": cleanJson }]);
+          setResult([{ "Réponse IA": cleanJson }]);
       }
 
     } catch (err: any) {
-      setError(err.message || "Une erreur est survenue lors de l'analyse.");
-      console.error(err);
+      setError(err.message || "Une erreur est survenue.");
     } finally {
       setLoading(false);
     }
@@ -139,7 +130,7 @@ export default function App() {
       <div className="max-w-4xl mx-auto space-y-8">
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            Agent de Planification IA
+            Agent de Planification IA 🤖
           </h1>
           <p className="text-gray-400">Dépose ton PDF, l'IA organise ton planning.</p>
         </div>
@@ -149,20 +140,18 @@ export default function App() {
         ) : (
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <div className="flex items-center gap-4 mb-6">
-              <div className="p-3 bg-blue-500/10 rounded-lg">
-                <FileText className="text-blue-400" />
-              </div>
+              <div className="text-3xl">📄</div>
               <div>
                 <p className="font-medium text-white">{file.name}</p>
                 <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
               </div>
-              {loading && <span className="ml-auto text-blue-400 animate-pulse">Lecture du PDF...</span>}
-              {!loading && !error && <CheckCircle className="ml-auto text-green-500" />}
+              {loading && <span className="ml-auto text-blue-400 animate-pulse">Analyse en cours... ⏳</span>}
+              {!loading && !error && <span className="ml-auto text-green-500 text-2xl">✅</span>}
             </div>
 
             {error && (
               <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5" />
+                <span>⚠️</span>
                 {error}
               </div>
             )}
@@ -180,4 +169,3 @@ export default function App() {
     </div>
   );
 }
-
