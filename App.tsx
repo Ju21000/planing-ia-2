@@ -1,135 +1,152 @@
-import React, { useState, useCallback } from 'react';
-// Début du composant de secours
-import { Upload } from 'lucide-react';
-import { useRef } from 'react'; // Ajoute useRef ici si ce n'est pas déjà importé avec React
+import React, { useState, useRef } from 'react';
+import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// --- PARTIE 1 : LE COMPOSANT FILEUPLOAD (Intégré ici pour éviter l'erreur de dossier) ---
 function FileUpload({ onFileUpload }: { onFileUpload: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) onFileUpload(file);
+  };
+
   return (
-    <div onClick={() => inputRef.current?.click()} className="p-8 border-2 border-dashed rounded cursor-pointer border-gray-600 hover:border-blue-500 text-white text-center">
-      <input type="file" ref={inputRef} onChange={(e) => e.target.files?.[0] && onFileUpload(e.target.files[0])} className="hidden" />
-      <Upload className="mx-auto w-12 h-12 text-blue-400 mb-2" />
-      <p>Clique pour déposer un fichier</p>
+    <div 
+      onClick={() => inputRef.current?.click()}
+      className="border-2 border-dashed border-gray-600 rounded-lg p-12 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-800/50 transition-all group"
+    >
+      <input type="file" ref={inputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.txt,.csv,.md" />
+      <div className="flex flex-col items-center gap-4">
+        <div className="p-4 bg-gray-800 rounded-full group-hover:scale-110 transition-transform">
+          <Upload className="w-8 h-8 text-blue-400" />
+        </div>
+        <div>
+          <p className="text-lg font-medium text-gray-200">Clique pour analyser un fichier</p>
+          <p className="text-sm text-gray-500 mt-1">PDF, TXT, CSV supportés</p>
+        </div>
+      </div>
     </div>
   );
 }
-// Fin du composant de secours
-import DataTable from './components/DataTable';
-import Loader from './components/Loader';
-import { extractScheduleFromDocs } from './services/geminiService';
-import { ScheduleEvent } from './types';
-import { processAndPadSchedule } from './utils/scheduleProcessor';
 
-type AppState = 'idle' | 'loading' | 'success' | 'error';
+// --- PARTIE 2 : LE COMPOSANT DATATABLE SIMPLIFIÉ ---
+function DataTable({ data }: { data: any[] }) {
+  if (!data || data.length === 0) return null;
+  const headers = Object.keys(data[0]);
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-700 mt-8">
+      <table className="w-full text-left text-sm text-gray-300">
+        <thead className="bg-gray-800 text-gray-100 uppercase font-medium">
+          <tr>
+            {headers.map((header) => (
+              <th key={header} className="px-6 py-4">{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-700 bg-gray-900/50">
+          {data.map((row, idx) => (
+            <tr key={idx} className="hover:bg-gray-800/50 transition-colors">
+              {headers.map((header) => (
+                <td key={`${idx}-${header}`} className="px-6 py-4">{String(row[header])}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>('idle');
-  const [scheduleData, setScheduleData] = useState<ScheduleEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [additionalInstructions, setAdditionalInstructions] = useState<string>('');
+// --- PARTIE 3 : L'APPLICATION PRINCIPALE ---
+export default function App() {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any[]>([]);
+  const [error, setError] = useState<string>("");
 
-  const handlePdfSelect = useCallback((file: File) => {
-    setPdfFile(file);
-    setError(null);
-  }, []);
-
-  const handleImageSelect = useCallback((file: File) => {
-    setImageFile(file);
-    setError(null);
-  }, []);
-
-  const handleAnalyze = useCallback(async () => {
-    if (!pdfFile) return;
-
-    setAppState('loading');
-    setError(null);
+  const handleProcess = async (uploadedFile: File) => {
+    setFile(uploadedFile);
+    setLoading(true);
+    setError("");
 
     try {
-      const rawData = await extractScheduleFromDocs(pdfFile, imageFile, additionalInstructions);
-      const processedData = processAndPadSchedule(rawData);
-      setScheduleData(processedData);
-      setAppState('success');
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Une erreur est survenue lors de l\'analyse.');
-      setAppState('error');
-    }
-  }, [pdfFile, imageFile, additionalInstructions]);
-  
-  const handleReset = useCallback(() => {
-    setAppState('idle');
-    setScheduleData([]);
-    setError(null);
-    setPdfFile(null);
-    setImageFile(null);
-    setAdditionalInstructions('');
-  }, []);
+      // Lecture du fichier
+      const text = await uploadedFile.text();
+      
+      // Appel direct à Gemini (Sans passer par un dossier service pour éviter les erreurs)
+      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || "";
+      if (!apiKey) throw new Error("Clé API manquante dans Vercel !");
 
-  const renderContent = () => {
-    switch (appState) {
-      case 'idle':
-        return <FileUpload 
-                  pdfFile={pdfFile}
-                  imageFile={imageFile}
-                  onPdfSelect={handlePdfSelect}
-                  onImageSelect={handleImageSelect}
-                  onAnalyze={handleAnalyze}
-                  disabled={false}
-                  instructions={additionalInstructions}
-                  onInstructionsChange={setAdditionalInstructions} 
-                />;
-      case 'loading':
-        return <div className="max-w-md mx-auto w-full scale-110"><Loader message={`Analyse structurelle en cours...`} /></div>;
-      case 'success':
-        return <DataTable data={scheduleData} fileName={pdfFile?.name || 'Document'} onReset={handleReset} />;
-      case 'error':
-        return (
-          <div className="text-center max-w-lg mx-auto p-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-red-200 dark:border-red-900/50">
-            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Échec du Système</h3>
-            <p className="text-slate-600 dark:text-slate-300 mb-8 leading-relaxed font-mono text-sm">{error}</p>
-            <button
-              onClick={handleReset}
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all shadow-lg hover:shadow-red-500/30"
-            >
-              Réinitialiser le protocole
-            </button>
-          </div>
-        );
-      default:
-        return null;
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      const prompt = `Analyse ce contenu et extrais un planning structuré sous forme de tableau JSON. Contenu: ${text.substring(0, 30000)}`;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const textResponse = response.text();
+      
+      // Nettoyage basique du JSON (Gemini met parfois des ```json ...)
+      const cleanJson = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      
+      try {
+          const parsedData = JSON.parse(cleanJson);
+          setResult(Array.isArray(parsedData) ? parsedData : [parsedData]);
+      } catch (e) {
+          setResult([{ Résultat: textResponse }]); // Si ce n'est pas du JSON, on affiche le texte
+      }
+
+    } catch (err: any) {
+      setError(err.message || "Une erreur est survenue");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <main className={`min-h-screen w-full flex flex-col relative overflow-hidden transition-colors duration-700 font-sans ${appState === 'loading' ? 'bg-slate-950' : 'bg-slate-50 dark:bg-slate-950'}`}>
-      
-      {/* Background Gradients Modernes */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        <div className={`absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-blue-400/20 dark:bg-blue-900/20 blur-[120px] transition-all duration-1000 ${appState === 'loading' ? 'opacity-30 scale-125 bg-cyan-600/20' : ''}`} />
-        <div className={`absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-purple-400/20 dark:bg-purple-900/20 blur-[120px] transition-all duration-1000 ${appState === 'loading' ? 'opacity-30 scale-125 bg-fuchsia-600/20' : ''}`} />
-      </div>
-
-      <div className="relative z-10 w-full flex-grow flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="w-full max-w-[95rem] mx-auto flex justify-center">
-          {renderContent()}
+    <div className="min-h-screen bg-gray-950 text-white p-8 font-sans">
+      <div className="max-w-4xl mx-auto space-y-8">
+        <div className="text-center space-y-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            Agent de Planification IA
+          </h1>
+          <p className="text-gray-400">Dépose ton document, l'IA organise ton planning.</p>
         </div>
-      </div>
-      
-      <footer className="relative z-10 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
-        <p className="flex items-center justify-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${appState === 'loading' ? 'bg-cyan-500 animate-ping' : 'bg-green-500 animate-pulse'}`}></span>
-            Propulsé par Google Gemini 3 Pro
-        </p>
-      </footer>
-    </main>
-  );
-};
 
-export default App;
+        {!file ? (
+          <FileUpload onFileUpload={handleProcess} />
+        ) : (
+          <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="p-3 bg-blue-500/10 rounded-lg">
+                <FileText className="text-blue-400" />
+              </div>
+              <div>
+                <p className="font-medium text-white">{file.name}</p>
+                <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
+              </div>
+              {loading && <span className="ml-auto text-blue-400 animate-pulse">Analyse en cours...</span>}
+              {!loading && !error && <CheckCircle className="ml-auto text-green-500" />}
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                {error}
+              </div>
+            )}
+
+            {!loading && result.length > 0 && <DataTable data={result} />}
+            
+            {!loading && (
+                <button onClick={() => setFile(null)} className="mt-6 text-sm text-gray-500 hover:text-white underline">
+                    Analyser un autre fichier
+                </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
