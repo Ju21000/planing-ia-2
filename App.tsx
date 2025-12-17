@@ -1,5 +1,19 @@
 import React, { useState, useCallback } from 'react';
-import FileUpload from './components/FileUpload';
+// Début du composant de secours
+import { Upload } from 'lucide-react';
+import { useRef } from 'react'; // Ajoute useRef ici si ce n'est pas déjà importé avec React
+
+function FileUpload({ onFileUpload }: { onFileUpload: (file: File) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div onClick={() => inputRef.current?.click()} className="p-8 border-2 border-dashed rounded cursor-pointer border-gray-600 hover:border-blue-500 text-white text-center">
+      <input type="file" ref={inputRef} onChange={(e) => e.target.files?.[0] && onFileUpload(e.target.files[0])} className="hidden" />
+      <Upload className="mx-auto w-12 h-12 text-blue-400 mb-2" />
+      <p>Clique pour déposer un fichier</p>
+    </div>
+  );
+}
+// Fin du composant de secours
 import DataTable from './components/DataTable';
 import Loader from './components/Loader';
 import { extractScheduleFromDocs } from './services/geminiService';
