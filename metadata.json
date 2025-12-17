@@ -1,0 +1,5 @@
+{
+  "name": "IA planning",
+  "description": "An application that uses AI to extract schedule information from a PDF file and provides the data in a downloadable CSV format.",
+  "requestFramePermissions": []
+}
